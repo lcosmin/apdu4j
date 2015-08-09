@@ -23,6 +23,7 @@ package apdu4j;
 
 import java.io.File;
 import java.security.NoSuchAlgorithmException;
+import java.security.Provider;
 import java.util.List;
 
 import javax.smartcardio.Card;
@@ -40,12 +41,15 @@ import javax.smartcardio.TerminalFactory;
  */
 public class TerminalManager {
 	public static final String lib_prop = "sun.security.smartcardio.library";
-	private static final String debian64_path = "/usr/lib/x86_64-linux-gnu/libpcsclite.so.1";
-	private static final String ubuntu_path = "/lib/libpcsclite.so.1";
-	private static final String ubuntu64_path = "/lib/x86_64-linux-gnu/libpcsclite.so.1";
-	private static final String freebsd_path = "/usr/local/lib/libpcsclite.so";
-	private static final String fedora64_path = "/usr/lib64/libpcsclite.so.1";
-	private static final String raspbian_path = "/usr/lib/arm-linux-gnueabihf/libpcsclite.so.1";
+
+	private static final String[] knownLibraryPaths = {
+			"/usr/lib/x86_64-linux-gnu/libpcsclite.so.1",
+			"/lib/x86_64-linux-gnu/libpcsclite.so.1",
+			"/usr/lib64/libpcsclite.so.1",
+			"/lib/libpcsclite.so.1",
+			"/usr/local/lib/libpcsclite.so",
+			"/usr/lib/arm-linux-gnueabihf/libpcsclite.so.1"
+	};
 
 	private static boolean buggy = true;
 
@@ -54,36 +58,35 @@ public class TerminalManager {
 	}
 
 	public static void fixPlatformPaths() {
-		if (System.getProperty(lib_prop) == null) {
-			// Set necessary parameters for seamless PC/SC access.
-			// http://ludovicrousseau.blogspot.com.es/2013/03/oracle-javaxsmartcardio-failures.html
-			if (System.getProperty("os.name").equalsIgnoreCase("Linux")) {
-				// Only try loading 64b paths if JVM can use them.
-				if (System.getProperty("os.arch").contains("64")) {
-					if (new File(debian64_path).exists()) {
-						System.setProperty(lib_prop, debian64_path);
-					} else if (new File(fedora64_path).exists()) {
-						System.setProperty(lib_prop, fedora64_path);
-					} else if (new File(ubuntu64_path).exists()) {
-						System.setProperty(lib_prop, ubuntu64_path);
-					}
-				} else if (new File(ubuntu_path).exists()) {
-					System.setProperty(lib_prop, ubuntu_path);
-				} else if (new File(raspbian_path).exists()) {
-					System.setProperty(lib_prop, raspbian_path);
-				} else {
-					// XXX: dlopen() works properly on Debian OpenJDK 7
-					// System.err.println("Hint: pcsc-lite probably missing.");
-				}
-			} else if (System.getProperty("os.name").equalsIgnoreCase("FreeBSD")) {
-				if (new File(freebsd_path).exists()) {
-					System.setProperty(lib_prop, freebsd_path);
-				} else {
-					System.err.println("Hint: pcsc-lite missing. pkg install devel/libccid");
+		if (System.getProperty(lib_prop) != null) {
+			// Test if this is actually working
+			// TODO: does checking this makes sense?
+			TerminalFactory tf = TerminalFactory.getDefault();
+			Provider p = tf.getProvider();
+			if (p != null) {
+				// It seems ok, return
+				return;
+			}
+			// otherwise, continue with testing the known paths
+		}
+
+		for (String path : knownLibraryPaths) {
+			if (new File(path).exists()) {
+				// See if this library is usable
+				System.setProperty(lib_prop, path);
+				TerminalFactory tf = TerminalFactory.getDefault();
+				Provider p = tf.getProvider();
+				if (p != null) {
+					//System.out.printf("found libpcsclite1 library at: %s\n", path);
+					break;
 				}
 			}
-		} else {
-			// TODO: display some helping information?
+		}
+
+		// Library still not found?
+		if (System.getProperty(lib_prop) == null) {
+			// TODO: should raise an exception to indicate the error
+			System.err.println("Error: couldn't find libpcsclite.so/libpcsclite.so.1");
 		}
 	}
 
